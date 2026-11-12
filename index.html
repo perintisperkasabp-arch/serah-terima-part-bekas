@@ -34,9 +34,10 @@ table{border-collapse:collapse;width:100%;font-size:13px}td,th{border-bottom:1px
 <nav><button data-t="a" class="on">1. Serah (Teknisi)</button><button data-t="b">2. Terima (Salvage)</button><button data-t="c">Riwayat</button></nav>
 
 <section id="a">
- <div class="c"><h2>Scan SPK</h2>
-  <button class="btn" id="scan">📷 Foto / Scan SPK</button>
-  <div class="mu" id="scanst" style="margin-top:6px">Foto SPK, data terisi otomatis. Bisa dikoreksi atau diisi manual.</div>
+ <div class="c"><h2>Foto SPK</h2>
+  <div id="spkimg"></div>
+  <button class="btn" id="scan">📷 Foto SPK*</button>
+  <div class="mu" style="margin-top:6px">Foto SPK WAJIB dan diambil langsung dengan kamera. Isi No. SPK dan No. Polisi secara manual di bawah.</div>
  </div>
  <div class="c"><h2>Data Penyerahan</h2>
   <div class="row"><div style="flex:1"><label>No. SPK</label><input type="text" id="spk"></div><div style="flex:1"><label>No. Polisi</label><input type="text" id="nopol"></div></div>
@@ -64,7 +65,7 @@ const GAS_URL = "PASTE_URL_WEB_APP_DI_SINI";
 // ===========================================================================
 const $=s=>document.querySelector(s),ST_W="Menunggu approval PIC Salvage",ST_K="Part Komplit";
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let recs=[],parts=[{q:1,ok:true,img:null}],cur=null,curPhotos=[];
+let recs=[],parts=[{q:1,ok:true,img:null}],cur=null,curPhotos=[],curSpk="",spkImg=null;
 const BL=["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
 const fmt=t=>{if(!t)return"";const d=new Date(t),p=n=>String(n).padStart(2,"0");return d.getDate()+" "+BL[d.getMonth()]+" "+d.getFullYear()+" "+p(d.getHours())+":"+p(d.getMinutes())};
 const opt=n=>Array.from({length:n},(_,i)=>`<option>${String(i).padStart(2,"0")}</option>`).join("");
@@ -105,32 +106,26 @@ $("#parts").addEventListener("click",e=>{const t=e.target.closest("[data-cam],[d
 $("#add").onclick=()=>{parts.push({q:1,ok:true,img:null});drawParts()};
 drawParts();
 
-$("#scan").onclick=async()=>{
- const du=await live(1400,.8);if(du==="cancel")return;if(du===null)return toast("Kamera tidak bisa diakses. Izinkan akses kamera.");
- const st=$("#scanst");st.textContent="⏳ Membaca SPK…";
- try{const code=kode();if(!code)throw new Error("Kode akses dibutuhkan");
-  const r=await fetch("/api/scan",{method:"POST",headers:{"Content-Type":"application/json","x-app-code":code},body:JSON.stringify({image:du.split(",")[1]})});
-  const j=await r.json();if(!r.ok){if(r.status===401)localStorage.removeItem("kode");throw new Error(j.error||"Gagal")}
-  if(j.spk)$("#spk").value=j.spk;if(j.nopol)$("#nopol").value=j.nopol;
-  if(j.parts&&j.parts.length){parts=j.parts.map(p=>({q:+p.q||1,ok:false,img:null}));drawParts()}
-  st.textContent=`✅ Terbaca ${j.parts?j.parts.length:0} part. Periksa lagi, lalu centang part yang fisiknya ada dan foto tiap part.`;
- }catch(x){st.textContent="⚠ "+x.message+". Isi manual atau foto ulang."}};
+function drawSpk(){$("#spkimg").innerHTML=spkImg?`<img class="big" src="${spkImg}" style="margin-bottom:8px">`:"";$("#scan").textContent=spkImg?"🔄 Ulang foto SPK":"📷 Foto SPK*"}
+$("#scan").onclick=async()=>{const du=await live(1280,.7);if(du==="cancel")return;if(du===null)return toast("Kamera tidak bisa diakses. Izinkan akses kamera.");spkImg=du;drawSpk()};
+drawSpk();
 
 $("#kirim").onclick=async()=>{
  const P=parts;
  if(!$("#spk").value.trim()||!$("#tek").value.trim()||!P.length)return toast("Isi No. SPK, Nama Teknisi, dan minimal 1 part");
+ if(!spkImg)return toast("Foto SPK wajib");
  if(P.some(p=>!p.img))return toast("Foto bukti wajib untuk setiap part");
  const btn=$("#kirim");btn.disabled=true;btn.textContent="Mengirim…";
  try{
-  await api("add",{id:"r"+Date.now(),spk:$("#spk").value.trim(),nopol:$("#nopol").value.trim(),teknisi:$("#tek").value.trim(),waktu:fmt(dtG("wkt")),parts:P.map(p=>({q:p.q,ok:!!p.ok,img:p.img}))});
+  await api("add",{id:"r"+Date.now(),spk:$("#spk").value.trim(),nopol:$("#nopol").value.trim(),teknisi:$("#tek").value.trim(),waktu:fmt(dtG("wkt")),parts:P.map(p=>({q:p.q,ok:!!p.ok,img:p.img})),spkImg});
   parts=[{q:1,ok:true,img:null}];drawParts();["#spk","#nopol"].forEach(s=>$(s).value="");dtS("wkt",nowLocal());
-  $("#scanst").textContent="Foto SPK, data terisi otomatis. Bisa dikoreksi atau diisi manual.";
+  spkImg=null;drawSpk();
   toast("✅ Terkirim ke Spreadsheet, menunggu approval PIC Salvage");
  }catch(x){toast("⚠ Gagal kirim: "+x.message)}
  btn.disabled=false;btn.textContent="Kirim ke PIC Salvage"};
 
 async function load(){try{const j=await api("list",{});const m={};
-  j.rows.forEach(r=>{const o=m[r[0]]||(m[r[0]]={id:r[0],spk:r[1],nopol:r[2],teknisi:r[3],waktuSerah:r[4],status:r[8],pic:r[9],waktuTerima:r[10],parts:[]});o.parts.push({n:r[5],q:r[6],ok:r[7]==="Ya",foto:r[11]})});
+  j.rows.forEach(r=>{const o=m[r[0]]||(m[r[0]]={id:r[0],spk:r[1],nopol:r[2],teknisi:r[3],waktuSerah:r[4],status:r[8],pic:r[9],waktuTerima:r[10],spkFoto:r[12],parts:[]});o.parts.push({n:r[5],q:r[6],ok:r[7]==="Ya",foto:r[11]})});
   recs=Object.values(m).reverse();drawLists()}catch(x){toast("⚠ "+x.message)}}
 $("#ref1").onclick=$("#ref2").onclick=load;
 
@@ -139,11 +134,11 @@ function drawLists(){
  $("#pend").innerHTML=cur?"":(pend.length?pend.map(r=>`<div class="c item" data-id="${esc(r.id)}"><b>${esc(r.spk)}</b> · ${esc(r.nopol)} <span class="badge w" style="float:right">Menunggu</span><div class="mu">${esc(r.teknisi)} · ${esc(r.waktuSerah)} · ${r.parts.length} part</div></div>`).join(""):'<div class="c mu">Tidak ada part yang menunggu approval.</div>');
  $("#tb").innerHTML="<tr><th>SPK</th><th>No. Polisi</th><th>Teknisi</th><th>Diserahkan</th><th>Part</th><th>PIC Salvage</th><th>Diterima</th><th>Status</th><th>Foto</th></tr>"+recs.map(r=>`<tr><td>${esc(r.spk)}</td><td>${esc(r.nopol)}</td><td>${esc(r.teknisi)}</td><td>${esc(r.waktuSerah)}</td><td>${r.parts.length}</td><td>${esc(r.pic)}</td><td>${esc(r.waktuTerima)}</td><td>${r.status===ST_K?"✅ ":"⏳ "}${esc(r.status)}</td><td><button class="btn s m" data-fo="${esc(r.id)}">📷 Lihat</button></td></tr>`).join("")}
 async function fotoOf(p){if(!p.foto)return "";try{return (await api("foto",{url:p.foto})).img}catch(x){return ""}}
-$("#pend").onclick=async e=>{const c=e.target.closest("[data-id]");if(!c)return;cur=recs.find(r=>r.id===c.dataset.id);curPhotos=[];drawLists();drawDet();
+$("#pend").onclick=async e=>{const c=e.target.closest("[data-id]");if(!c)return;cur=recs.find(r=>r.id===c.dataset.id);curPhotos=[];curSpk="";drawLists();drawDet();(async()=>{const id=cur.id,im=await fotoOf({foto:cur.spkFoto});if(cur&&cur.id===id){curSpk=im;drawDet(true)}})();
  for(let i=0;i<cur.parts.length;i++){const id=cur.id;const im=await fotoOf(cur.parts[i]);if(!cur||cur.id!==id)return;curPhotos[i]=im;drawDet(true)}};
 function drawDet(keep){if(!cur){$("#det").classList.add("hide");return}
  const d=$("#det"),pic=keep?($("#pic")?.value||""):"",cs=keep?[...d.querySelectorAll(".ck")].map(x=>x.checked):null,wv=keep&&$("#wt")?dtG("wt"):null;d.classList.remove("hide");
- d.innerHTML=`<div class="c"><button class="btn s m" id="back">← Kembali</button><h2 style="margin-top:10px">SPK ${esc(cur.spk)} · ${esc(cur.nopol)}</h2><div class="mu">Teknisi: ${esc(cur.teknisi)} · ${esc(cur.waktuSerah)}</div></div>
+ d.innerHTML=`<div class="c"><button class="btn s m" id="back">← Kembali</button><h2 style="margin-top:10px">SPK ${esc(cur.spk)} · ${esc(cur.nopol)}</h2><div class="mu">Teknisi: ${esc(cur.teknisi)} · ${esc(cur.waktuSerah)}</div>${curSpk?`<img class="big" src="${curSpk}" style="margin-top:8px">`:(cur.spkFoto?'<div class="mu">Memuat foto SPK…</div>':"")}</div>
  <div class="c"><h2>Cek part sesuai SPK</h2>${cur.parts.map((p,i)=>`<div class="part"><input type="checkbox" class="ck" ${(cs?cs[i]:p.ok)?"checked":""}><div class="n"><b>${esc(p.n)}</b></div><div class="mu">×${esc(p.q)}</div>${curPhotos[i]?`<img class="big" src="${curPhotos[i]}">`:(p.foto?'<div class="mu">Memuat foto…</div>':"")}</div>`).join("")}</div>
  <div class="c"><h2>Penerima</h2><label>Nama PIC (Salvage)</label><input type="text" id="pic" value="${esc(pic)}">
  <label>Tanggal &amp; jam terima</label>${dtH("wt")}
@@ -156,8 +151,8 @@ function drawDet(keep){if(!cur){$("#det").classList.add("hide");return}
 
 function lb(html){const o=document.createElement("div");o.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:20;overflow:auto;padding:calc(16px + env(safe-area-inset-top,0px)) 14px 40px";o.innerHTML='<button class="btn m" style="position:sticky;top:0;margin-bottom:10px">✕ Tutup</button>'+html;o.onclick=e=>{if(e.target.tagName==="BUTTON"||e.target===o)o.remove()};document.body.appendChild(o);return o}
 document.addEventListener("click",async e=>{const t=e.target;
- if(t.matches("#det img.big")){lb(`<img src="${t.src}" style="width:100%;border-radius:10px">`);return}
- if(t.dataset&&t.dataset.fo){const r=recs.find(x=>x.id===t.dataset.fo),o=lb('<div style="color:#fff">Memuat foto…</div>'),ld=o.children[1];let h="";
+ if(t.matches("#det img.big,#spkimg img.big")){lb(`<img src="${t.src}" style="width:100%;border-radius:10px">`);return}
+ if(t.dataset&&t.dataset.fo){const r=recs.find(x=>x.id===t.dataset.fo),o=lb('<div style="color:#fff">Memuat foto…</div>'),ld=o.children[1];let h="";if(r.spkFoto){const si=await fotoOf({foto:r.spkFoto});h+='<div style="color:#fff;margin:10px 0 4px">Foto SPK</div>'+(si?`<img src="${si}" style="width:100%;border-radius:10px">`:"")}
   for(const p of r.parts){const im=await fotoOf(p);h+=`<div style="color:#fff;margin:10px 0 4px">${esc(p.n)} ×${esc(p.q)}</div>`+(im?`<img src="${im}" style="width:100%;border-radius:10px">`:'<div style="color:#bbb">Tidak ada foto</div>')}
   ld.remove();o.insertAdjacentHTML("beforeend",h)}});
 </script></body></html>
